@@ -1,1 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NSK GLOBAL FOODS - Admin Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0}
+header{background:#064323;color:#fff;padding:18px}
+.container{max-width:1100px;margin:20px auto;padding:20px;background:#fff;border-radius:8px}
+input,button{padding:10px;margin:5px}
+table{width:100%;border-collapse:collapse;margin-top:15px}
+th,td{border:1px solid #ddd;padding:10px;text-align:left}
+th{background:#064323;color:#fff}
+button{background:#064323;color:#fff;border:none;cursor:pointer}
+</style>
+</head>
+<body>
+<header><h2>NSK GLOBAL FOODS - Buyer Inquiry Dashboard</h2></header>
+<div class="container">
+<div id="login">
+<h3>Admin Login</h3>
+<input id="email" type="email" placeholder="Email"><br>
+<input id="password" type="password" placeholder="Password"><br>
+<button onclick="login()">Login</button>
+<p id="msg"></p>
+</div>
 
+<div id="dashboard" style="display:none">
+<input id="search" placeholder="Search..." onkeyup="filterTable()">
+<button onclick="exportCSV()">Export CSV</button>
+<button onclick="logout()">Logout</button>
+<table id="tbl">
+<thead><tr>
+<th>Name</th><th>Email</th><th>Company</th><th>Country</th><th>Requirements</th><th>Date</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+</div>
+
+<script>
+const SUPABASE_URL="https://wnuftztrvlxxxlntmhwd.supabase.co";
+const SUPABASE_ANON_KEY="sb_publishable_ydhbdFjumanBaNlS2Aj1Qg_zAM8gRd1";
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+
+async function login(){
+ const {error}=await sb.auth.signInWithPassword({
+ email:document.getElementById('email').value,
+ password:document.getElementById('password').value
+ });
+ if(error){document.getElementById('msg').innerText=error.message;return;}
+ document.getElementById('login').style.display='none';
+ document.getElementById('dashboard').style.display='block';
+ loadData();
+}
+async function logout(){await sb.auth.signOut();location.reload();}
+async function loadData(){
+ const {data,error}=await sb.from('buyer_inquiries').select('*').order('created_at',{ascending:false});
+ if(error){alert(error.message);return;}
+ const tb=document.querySelector('#tbl tbody');tb.innerHTML='';
+ data.forEach(r=>{
+ tb.innerHTML+=`<tr><td>${r.name||''}</td><td>${r.email||''}</td><td>${r.company||''}</td><td>${r.country||''}</td><td>${r.requirements||''}</td><td>${r.created_at||''}</td></tr>`;
+ });
+}
+function filterTable(){
+ let q=document.getElementById('search').value.toLowerCase();
+ document.querySelectorAll('#tbl tbody tr').forEach(tr=>{
+ tr.style.display=tr.innerText.toLowerCase().includes(q)?'':'none';
+ });
+}
+function exportCSV(){
+ let csv=[];
+ document.querySelectorAll('table tr').forEach(r=>{
+ let row=[...r.cells].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"');
+ csv.push(row.join(','));
+ });
+ const blob=new Blob([csv.join('\n')],{type:'text/csv'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download='buyer_inquiries.csv';
+ a.click();
+}
+</script>
+</body>
+</html>
