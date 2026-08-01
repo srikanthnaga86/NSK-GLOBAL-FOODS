@@ -1,0 +1,9 @@
+{
+  "name": "nsk-submit-inquiry",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": "18.x" },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.36.0"
+  }
+}
