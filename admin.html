@@ -14,73 +14,197 @@ table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #ddd;padding:10px;text-align:left}
 th{background:#064323;color:#fff}
 button{background:#064323;color:#fff;border:none;cursor:pointer}
+#status{margin-top:8px;color:#b00}
+#userInfo{font-size:13px;color:#064323;margin-bottom:10px}
+.empty{padding:20px;background:#fff7e6;border:1px solid #f0d8b0;border-radius:6px;margin-top:12px}
 </style>
 </head>
 <body>
 <header><h2>NSK GLOBAL FOODS - Buyer Inquiry Dashboard</h2></header>
 <div class="container">
-<div id="login">
-<h3>Admin Login</h3>
-<input id="email" type="email" placeholder="Email"><br>
-<input id="password" type="password" placeholder="Password"><br>
-<button onclick="login()">Login</button>
-<p id="msg"></p>
-</div>
+  <div id="login">
+    <h3>Admin Login</h3>
+    <input id="email" type="email" placeholder="Email"><br>
+    <input id="password" type="password" placeholder="Password"><br>
+    <button id="loginBtn">Login</button>
+    <p id="msg"></p>
+    <p id="status"></p>
+  </div>
 
-<div id="dashboard" style="display:none">
-<input id="search" placeholder="Search..." onkeyup="filterTable()">
-<button onclick="exportCSV()">Export CSV</button>
-<button onclick="logout()">Logout</button>
-<table id="tbl">
-<thead><tr>
-<th>Name</th><th>Email</th><th>Company</th><th>Country</th><th>Requirements</th><th>Date</th>
-</tr></thead>
-<tbody></tbody>
-</table>
-</div>
+  <div id="dashboard" style="display:none">
+    <div id="userInfo"></div>
+    <input id="search" placeholder="Search..." onkeyup="filterTable()">
+    <button onclick="exportCSV()">Export CSV</button>
+    <button onclick="logout()">Logout</button>
+    <table id="tbl">
+      <thead><tr>
+        <th>Name</th><th>Email</th><th>Company</th><th>Country</th><th>Requirements</th><th>Date</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="emptyState" class="empty" style="display:none">No inquiries found.</div>
+  </div>
 </div>
 
 <script>
-const SUPABASE_URL="https://wnuftztrvlxxxlntmhwd.supabase.co";
-const SUPABASE_ANON_KEY="sb_publishable_ydhbdFjumanBaNlS2Aj1Qg_zAM8gRd1";
-const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const SUPABASE_URL = "https://wnuftztrvlxxxlntmhwd.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ydhbdFjumanBaNlS2Aj1Qg_zAM8gRd1";
+// create client
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-async function login(){
- const {error}=await sb.auth.signInWithPassword({
- email:document.getElementById('email').value,
- password:document.getElementById('password').value
- });
- if(error){document.getElementById('msg').innerText=error.message;return;}
- document.getElementById('login').style.display='none';
- document.getElementById('dashboard').style.display='block';
- loadData();
+// Helper to show messages
+function setMsg(text, isError = false) {
+  const el = document.getElementById('msg');
+  el.innerText = text || '';
+  el.style.color = isError ? '#b00' : '#060';
+  if (text) console.log(text);
 }
-async function logout(){await sb.auth.signOut();location.reload();}
-async function loadData(){
- const {data,error}=await sb.from('buyer_inquiries').select('*').order('created_at',{ascending:false});
- if(error){alert(error.message);return;}
- const tb=document.querySelector('#tbl tbody');tb.innerHTML='';
- data.forEach(r=>{
- tb.innerHTML+=`<tr><td>${r.name||''}</td><td>${r.email||''}</td><td>${r.company||''}</td><td>${r.country||''}</td><td>${r.requirements||''}</td><td>${r.created_at||''}</td></tr>`;
- });
+
+// Show status for debugging (permission errors, etc.)
+function setStatus(text) {
+  document.getElementById('status').innerText = text || '';
+  if (text) console.info('STATUS:', text);
 }
-function filterTable(){
- let q=document.getElementById('search').value.toLowerCase();
- document.querySelectorAll('#tbl tbody tr').forEach(tr=>{
- tr.style.display=tr.innerText.toLowerCase().includes(q)?'':'none';
- });
+
+// On page load, check session
+(async function init() {
+  try {
+    const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+    if (sessionError) {
+      console.error('getSession error', sessionError);
+      setStatus('Could not check session (see console).');
+    }
+    const session = sessionData?.session;
+    if (session) {
+      showDashboard(session.user);
+      await loadData();
+    } else {
+      document.getElementById('login').style.display = 'block';
+    }
+  } catch (err) {
+    console.error('init error', err);
+    setStatus('Initialization error (see console).');
+  }
+
+  // Listen to auth changes (useful if you sign in via other tab)
+  sb.auth.onAuthStateChange((event, session) => {
+    console.log('Auth event', event, session);
+    if (session?.user) {
+      showDashboard(session.user);
+      loadData();
+    } else {
+      // signed out
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('login').style.display = 'block';
+    }
+  });
+})();
+
+// login flow
+document.getElementById('loginBtn').addEventListener('click', login);
+async function login() {
+  setMsg('');
+  setStatus('Signing in...');
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  if (!email || !password) { setMsg('Provide email and password', true); setStatus(''); return; }
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      console.error('signIn error', error);
+      setMsg(error.message || 'Login failed', true);
+      setStatus('Login failed: ' + (error.message || 'unknown'));
+      return;
+    }
+    setMsg('Login successful');
+    setStatus('');
+    showDashboard(data.user);
+    await loadData();
+  } catch (err) {
+    console.error('login exception', err);
+    setMsg('Login exception (see console)', true);
+    setStatus('Login exception');
+  }
 }
-function exportCSV(){
- let csv=[];
- document.querySelectorAll('table tr').forEach(r=>{
- let row=[...r.cells].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"');
- csv.push(row.join(','));
- });
- const blob=new Blob([csv.join('\n')],{type:'text/csv'});
- const a=document.createElement('a');
- a.href=URL.createObjectURL(blob);
- a.download='buyer_inquiries.csv';
- a.click();
+
+async function logout() {
+  try {
+    await sb.auth.signOut();
+    location.reload();
+  } catch (err) {
+    console.error('logout error', err);
+    setMsg('Logout failed (see console)', true);
+  }
+}
+
+function showDashboard(user) {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('userInfo').innerText = 'Signed in as: ' + (user?.email || user?.id || 'unknown');
+  setMsg('');
+}
+
+// load data and surface errors
+async function loadData() {
+  setStatus('Loading inquiries...');
+  try {
+    const { data, error } = await sb.from('buyer_inquiries').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('select error', error);
+      setStatus('Select failed: ' + (error.message || JSON.stringify(error)));
+      setMsg('Failed to load inquiries (see status/console)', true);
+      document.querySelector('#tbl tbody').innerHTML = '';
+      document.getElementById('emptyState').style.display = 'none';
+      return;
+    }
+    console.log('buyer_inquiries data', data);
+    const tb = document.querySelector('#tbl tbody');
+    tb.innerHTML = '';
+    if (!data || data.length === 0) {
+      document.getElementById('emptyState').style.display = 'block';
+      setStatus('No inquiries found (0 rows).');
+      return;
+    } else {
+      document.getElementById('emptyState').style.display = 'none';
+    }
+    data.forEach(r => {
+      const date = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+      const safe = v => (v === null || v === undefined) ? '' : String(v).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      tb.innerHTML += `<tr>
+        <td>${safe(r.name)}</td>
+        <td>${safe(r.email)}</td>
+        <td>${safe(r.company)}</td>
+        <td>${safe(r.country)}</td>
+        <td>${safe(r.requirements)}</td>
+        <td>${safe(date)}</td>
+      </tr>`;
+    });
+    setStatus('Loaded ' + data.length + ' rows.');
+  } catch (err) {
+    console.error('loadData exception', err);
+    setStatus('Data load exception (see console).');
+    setMsg('Failed loading data (see console)', true);
+  }
+}
+
+function filterTable() {
+  let q = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('#tbl tbody tr').forEach(tr => {
+    tr.style.display = tr.innerText.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function exportCSV() {
+  let csv = [];
+  document.querySelectorAll('table tr').forEach(r => {
+    let row = [...r.cells].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
+    if (row.length) csv.push(row.join(','));
+  });
+  const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'buyer_inquiries.csv';
+  a.click();
 }
 </script>
 </body>
